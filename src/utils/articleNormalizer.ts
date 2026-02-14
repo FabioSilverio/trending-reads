@@ -51,7 +51,14 @@ export function filterValid(articles: Article[]): Article[] {
 }
 
 export function sortByScore(articles: Article[]): Article[] {
-  return [...articles].sort((a, b) => b.score - a.score);
+  return [...articles].sort((a, b) => {
+    // Primary: score descending
+    if (b.score !== a.score) return b.score - a.score;
+    // Tiebreak: most recent first
+    const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+    const dateB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+    return dateB - dateA;
+  });
 }
 
 export function filterBySearch(articles: Article[], query: string): Article[] {

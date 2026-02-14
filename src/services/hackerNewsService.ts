@@ -1,7 +1,7 @@
 import type { Article, Category } from '../types/article';
 import { HN_SEARCH_TERMS } from '../config/feedSources';
 
-const HN_API = 'https://hn.algolia.com/api/v1/search';
+const HN_API = 'https://hn.algolia.com/api/v1/search_by_date';
 
 interface HNHit {
   objectID: string;
@@ -22,7 +22,7 @@ async function searchHN(query: string): Promise<HNHit[]> {
     query,
     tags: 'story',
     hitsPerPage: '15',
-    numericFilters: 'points>20',
+    numericFilters: 'points>10',
   });
 
   try {
@@ -33,6 +33,24 @@ async function searchHN(query: string): Promise<HNHit[]> {
   } catch {
     return [];
   }
+}
+
+function computeHNScore(hit: HNHit): number {
+  // Combine engagement with recency
+  const engagement = hit.points + hit.num_comments * 2;
+
+  const ageMs = Date.now() - new Date(hit.created_at).getTime();
+  const ageHours = ageMs / (1000 * 60 * 60);
+
+  let recencyMultiplier = 1;
+  if (ageHours < 6) recencyMultiplier = 3;
+  else if (ageHours < 24) recencyMultiplier = 2.5;
+  else if (ageHours < 48) recencyMultiplier = 2;
+  else if (ageHours < 72) recencyMultiplier = 1.5;
+  else if (ageHours < 168) recencyMultiplier = 1;
+  else recencyMultiplier = 0.5;
+
+  return engagement * recencyMultiplier;
 }
 
 export async function fetchHackerNews(category: Category): Promise<Article[]> {
@@ -60,7 +78,7 @@ export async function fetchHackerNews(category: Category): Promise<Article[]> {
       url: hit.url || `https://news.ycombinator.com/item?id=${hit.objectID}`,
       source: 'Hacker News',
       category,
-      score: hit.points + hit.num_comments * 2,
+      score: computeHNScore(hit),
       description: hit.story_text?.slice(0, 200),
       publishedAt: hit.created_at,
     }));

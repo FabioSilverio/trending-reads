@@ -48,6 +48,3 @@ export const RSS_SOURCES: FeedSource[] = [
 ];
 
 export const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
-
-// Delay between rss2json requests to avoid rate limiting (ms)
-export const RSS_FETCH_DELAY_MS = 800;

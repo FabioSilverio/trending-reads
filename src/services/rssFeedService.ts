@@ -1,22 +1,13 @@
 import type { Article, Category } from '../types/article';
-import { RSS_SOURCES, RSS_FETCH_DELAY_MS } from '../config/feedSources';
+import { RSS_SOURCES } from '../config/feedSources';
 
-interface Rss2JsonItem {
+interface FeedItem {
   title: string;
   link: string;
   description: string;
   pubDate: string;
   thumbnail?: string;
-  enclosure?: { link?: string };
 }
-
-interface Rss2JsonResponse {
-  status: string;
-  items: Rss2JsonItem[];
-  feed: { title: string };
-}
-
-const RSS2JSON_API = 'https://api.rss2json.com/v1/api.json';
 
 function stripHtml(html: string): string {
   const div = document.createElement('div');
@@ -24,30 +15,40 @@ function stripHtml(html: string): string {
   return div.textContent || div.innerText || '';
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+// ========== PROXY STRATEGIES ==========
+
+async function fetchViaCorsproxy(feedUrl: string): Promise<string> {
+  const url = `https://corsproxy.io/?url=${encodeURIComponent(feedUrl)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`corsproxy.io failed: ${res.status}`);
+  return res.text();
 }
 
-async function fetchViaRss2Json(feedUrl: string): Promise<Rss2JsonItem[]> {
+async function fetchViaCodetabs(feedUrl: string): Promise<string> {
+  const url = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(feedUrl)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`codetabs failed: ${res.status}`);
+  return res.text();
+}
+
+async function fetchViaRss2Json(feedUrl: string): Promise<FeedItem[]> {
   const params = new URLSearchParams({ rss_url: feedUrl });
-  const res = await fetch(`${RSS2JSON_API}?${params}`);
+  const res = await fetch(`https://api.rss2json.com/v1/api.json?${params}`);
   if (!res.ok) throw new Error(`rss2json failed: ${res.status}`);
-  const data: Rss2JsonResponse = await res.json();
+  const data = await res.json();
   if (data.status !== 'ok') throw new Error(`rss2json status: ${data.status}`);
-  return data.items;
+  return data.items.map((i: Record<string, string>) => ({
+    title: i.title || '',
+    link: i.link || '',
+    description: i.description || '',
+    pubDate: i.pubDate || '',
+    thumbnail: i.thumbnail || '',
+  }));
 }
 
-async function fetchViaAllOrigins(feedUrl: string): Promise<Rss2JsonItem[]> {
-  // Use allorigins /get endpoint which wraps in JSON (more reliable than /raw)
-  const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(feedUrl)}`);
-  if (!res.ok) throw new Error(`allorigins failed: ${res.status}`);
-  const json = await res.json();
-  const xml = json.contents;
-  if (!xml || typeof xml !== 'string') throw new Error('allorigins empty response');
-  return parseXml(xml);
-}
+// ========== XML PARSING ==========
 
-function parseXml(xml: string): Rss2JsonItem[] {
+function parseXml(xml: string): FeedItem[] {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, 'text/xml');
 
@@ -57,12 +58,11 @@ function parseXml(xml: string): Rss2JsonItem[] {
     items = doc.querySelectorAll('entry');
   }
 
-  const results: Rss2JsonItem[] = [];
+  const results: FeedItem[] = [];
 
   items.forEach((item) => {
     const title = item.querySelector('title')?.textContent?.trim() || '';
 
-    // Links: RSS uses <link> text, Atom uses <link href="">
     let link = item.querySelector('link')?.textContent?.trim() || '';
     if (!link) {
       link = item.querySelector('link')?.getAttribute('href')?.trim() || '';
@@ -80,64 +80,99 @@ function parseXml(xml: string): Rss2JsonItem[] {
       item.querySelector('updated')?.textContent ||
       '';
 
+    const thumbnail =
+      item.querySelector('media\\:thumbnail')?.getAttribute('url') ||
+      item.querySelector('media\\:content')?.getAttribute('url') ||
+      '';
+
     if (title && link) {
-      results.push({ title, link, description, pubDate });
+      results.push({ title, link, description, pubDate, thumbnail });
     }
   });
 
   return results;
 }
 
-/**
- * Extract the actual article URL from Reddit RSS items.
- * Reddit RSS items have a link to the reddit discussion,
- * but the actual external URL is often in the description HTML.
- */
-function extractRedditUrl(item: Rss2JsonItem): string {
-  // Try to find external URL in the description HTML
+// ========== FETCH WITH FALLBACK CHAIN ==========
+
+async function fetchFeed(feedUrl: string): Promise<FeedItem[]> {
+  // Strategy 1: corsproxy.io → parse XML
+  try {
+    const xml = await fetchViaCorsproxy(feedUrl);
+    const items = parseXml(xml);
+    if (items.length > 0) return items;
+  } catch {
+    // fallthrough
+  }
+
+  // Strategy 2: codetabs → parse XML
+  try {
+    const xml = await fetchViaCodetabs(feedUrl);
+    const items = parseXml(xml);
+    if (items.length > 0) return items;
+  } catch {
+    // fallthrough
+  }
+
+  // Strategy 3: rss2json (already parsed, but rate limited)
+  try {
+    return await fetchViaRss2Json(feedUrl);
+  } catch {
+    // fallthrough
+  }
+
+  return [];
+}
+
+// ========== REDDIT URL EXTRACTION ==========
+
+function extractRedditUrl(item: FeedItem): string {
   const match = item.description?.match(/href="(https?:\/\/(?!www\.reddit\.com)[^"]+)"/);
   if (match) return match[1];
-  // Fallback to the reddit link itself
   return item.link;
 }
+
+// ========== SCORING ==========
+
+function computeScore(pubDate: string, index: number, descriptionLength: number): number {
+  // Recency is king: articles from today get highest score
+  let recencyScore = 0;
+  if (pubDate) {
+    const ageMs = Date.now() - new Date(pubDate).getTime();
+    const ageHours = ageMs / (1000 * 60 * 60);
+    if (ageHours < 6) recencyScore = 80;
+    else if (ageHours < 24) recencyScore = 65;
+    else if (ageHours < 48) recencyScore = 50;
+    else if (ageHours < 72) recencyScore = 40;
+    else if (ageHours < 168) recencyScore = 25; // 1 week
+    else recencyScore = 10;
+  } else {
+    recencyScore = Math.max(5, 30 - index * 3);
+  }
+
+  const lengthBonus = descriptionLength > 100 ? 8 : 0;
+  const positionBonus = Math.max(0, 12 - index * 2); // first items in feed get a small boost
+
+  return recencyScore + lengthBonus + positionBonus;
+}
+
+// ========== MAIN EXPORT ==========
 
 export async function fetchRssFeeds(category: Category): Promise<Article[]> {
   const sources = RSS_SOURCES.filter((s) => s.category === category);
   const results: Article[] = [];
 
-  // Fetch feeds sequentially with delay to avoid rss2json rate limit
-  for (let i = 0; i < sources.length; i++) {
-    const source = sources[i];
-
-    // Add delay between requests (not before the first one)
-    if (i > 0) {
-      await delay(RSS_FETCH_DELAY_MS);
-    }
-
+  // Fetch ALL feeds in parallel — no more rss2json rate limit concern
+  const fetchPromises = sources.map(async (source) => {
     try {
-      let items: Rss2JsonItem[];
-      try {
-        items = await fetchViaRss2Json(source.url);
-      } catch {
-        // Fallback to allorigins if rss2json fails
-        try {
-          items = await fetchViaAllOrigins(source.url);
-        } catch {
-          console.warn(`[RSS] Both proxies failed for: ${source.name}`);
-          continue;
-        }
-      }
-
+      const items = await fetchFeed(source.url);
       const isReddit = source.name.startsWith('r/');
-      const now = Date.now();
 
-      const articles = items
+      return items
         .filter((item) => item.title && item.title.trim() !== '' && item.link && item.link.trim() !== '')
         .slice(0, 10)
         .map((item, index) => {
           const description = stripHtml(item.description).slice(0, 250);
-          const recencyScore = Math.max(0, 50 - index * 3);
-          const lengthBonus = description.length > 100 ? 10 : 0;
           const url = isReddit ? extractRedditUrl(item) : item.link;
 
           return {
@@ -146,19 +181,21 @@ export async function fetchRssFeeds(category: Category): Promise<Article[]> {
             url,
             source: source.name,
             category,
-            score: recencyScore + lengthBonus,
+            score: computeScore(item.pubDate, index, description.length),
             description,
-            publishedAt: item.pubDate
-              ? new Date(item.pubDate).toISOString()
-              : new Date(now - index * 3600000).toISOString(),
-            thumbnail: item.thumbnail || item.enclosure?.link,
+            publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : undefined,
+            thumbnail: item.thumbnail || undefined,
           };
         });
-
-      results.push(...articles);
     } catch {
       console.warn(`[RSS] Failed to fetch: ${source.name}`);
+      return [];
     }
+  });
+
+  const allResults = await Promise.all(fetchPromises);
+  for (const batch of allResults) {
+    results.push(...batch);
   }
 
   return results;
