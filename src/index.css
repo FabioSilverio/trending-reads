@@ -332,14 +332,137 @@ body {
   margin-bottom: 16px;
 }
 
+/* ===== Back Button ===== */
+.back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.back-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ===== Landing Page ===== */
+.landing {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 20px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.landing-hero {
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.landing-title {
+  font-size: 3rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, var(--accent), #c084fc, #f472b6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 12px;
+}
+
+.landing-subtitle {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  max-width: 500px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+.landing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  width: 100%;
+  max-width: 600px;
+}
+
+.landing-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  text-align: center;
+  font-family: inherit;
+  color: inherit;
+}
+
+.landing-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--accent);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 32px rgba(124, 109, 240, 0.15);
+}
+
+.landing-card-icon {
+  font-size: 2.5rem;
+  margin-bottom: 4px;
+}
+
+.landing-card-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.landing-card-desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.landing-footer {
+  margin-top: 40px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
   .app-header {
-    padding: 20px 0 0;
+    padding: 16px 0 0;
   }
 
   .app-title {
-    font-size: 1.4rem;
+    font-size: 1.3rem;
+  }
+
+  .app-subtitle {
+    font-size: 0.75rem;
   }
 
   .article-grid {
@@ -350,6 +473,35 @@ body {
     padding: 6px 12px;
     font-size: 0.8rem;
   }
+
+  .landing-title {
+    font-size: 2.2rem;
+  }
+
+  .landing-subtitle {
+    font-size: 0.95rem;
+  }
+
+  .landing-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .landing-card {
+    padding: 24px 16px;
+  }
+
+  .landing-card-icon {
+    font-size: 2rem;
+  }
+
+  .landing-card-title {
+    font-size: 1rem;
+  }
+
+  .landing-card-desc {
+    font-size: 0.75rem;
+  }
 }
 
 @media (max-width: 480px) {
@@ -358,10 +510,66 @@ body {
   }
 
   .header-content {
-    margin-bottom: 14px;
+    margin-bottom: 12px;
+  }
+
+  .app-title {
+    font-size: 1.15rem;
   }
 
   .card-title {
     font-size: 0.95rem;
+  }
+
+  .article-card {
+    padding: 16px;
+  }
+
+  .search-input {
+    padding: 10px 36px 10px 40px;
+    font-size: 0.9rem;
+  }
+
+  .landing {
+    padding: 0 16px;
+    justify-content: flex-start;
+    padding-top: 15vh;
+  }
+
+  .landing-hero {
+    margin-bottom: 32px;
+  }
+
+  .landing-title {
+    font-size: 1.8rem;
+  }
+
+  .landing-subtitle {
+    font-size: 0.85rem;
+  }
+
+  .landing-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .landing-card {
+    flex-direction: row;
+    padding: 18px 16px;
+    text-align: left;
+    gap: 14px;
+  }
+
+  .landing-card-icon {
+    font-size: 1.8rem;
+    margin-bottom: 0;
+  }
+
+  .landing-card-title {
+    font-size: 0.95rem;
+  }
+
+  .landing-card-desc {
+    font-size: 0.72rem;
   }
 }

@@ -3,10 +3,11 @@ import type { Category } from '../types/article';
 import { SearchBar } from './SearchBar';
 import { CategoryTabs } from './CategoryTabs';
 import { ArticleGrid } from './ArticleGrid';
+import { LandingPage } from './LandingPage';
 import { useArticles } from '../hooks/useArticles';
 
 export function App() {
-  const [category, setCategory] = useState<Category>('tecnologia');
+  const [category, setCategory] = useState<Category | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const { articles, loading, error, refresh } = useArticles(category, searchQuery);
 
@@ -15,13 +16,29 @@ export function App() {
     setSearchQuery('');
   }, []);
 
+  const handleBack = useCallback(() => {
+    setCategory(null);
+    setSearchQuery('');
+  }, []);
+
+  if (!category) {
+    return <LandingPage onSelect={handleCategoryChange} />;
+  }
+
   return (
     <div className="app">
       <header className="app-header">
         <div className="header-content">
           <div className="brand">
-            <h1 className="app-title">Trending Reads</h1>
-            <p className="app-subtitle">Artigos longos e essays populares</p>
+            <button className="back-btn" onClick={handleBack} title="Voltar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div>
+              <h1 className="app-title">Trending Reads</h1>
+              <p className="app-subtitle">Artigos longos e essays populares</p>
+            </div>
           </div>
           <button className="refresh-btn" onClick={refresh} disabled={loading} title="Atualizar">
             <svg className={`refresh-icon ${loading ? 'spinning' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

@@ -15,184 +15,273 @@ function stripHtml(html: string): string {
   return div.textContent || div.innerText || '';
 }
 
-// ========== PROXY STRATEGIES ==========
+// ========== CORS PROXY STRATEGIES ==========
 
+// Strategy 1: codetabs proxy
 async function fetchViaCodetabs(feedUrl: string): Promise<string> {
-  const url = `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(feedUrl)}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`codetabs ${res.status}`);
-  const text = await res.text();
-  // Validate it's actually XML, not an error page
-  if (!text.includes('<') || text.startsWith('<!DOCTYPE html')) {
-    throw new Error('codetabs returned HTML instead of XML');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(
+      `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(feedUrl)}`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`codetabs HTTP ${res.status}`);
+    const text = await res.text();
+    // Validate it's XML, not an error page
+    if (!text || text.length < 50 || text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+      throw new Error('codetabs returned HTML instead of XML');
+    }
+    return text;
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
   }
-  return text;
 }
 
+// Strategy 2: allorigins proxy
+async function fetchViaAllOrigins(feedUrl: string): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`allorigins HTTP ${res.status}`);
+    const text = await res.text();
+    if (!text || text.length < 50 || text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+      throw new Error('allorigins returned HTML instead of XML');
+    }
+    return text;
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+// Strategy 3: rss2json API (returns JSON, not XML)
 async function fetchViaRss2Json(feedUrl: string): Promise<FeedItem[]> {
-  const params = new URLSearchParams({ rss_url: feedUrl });
-  const res = await fetch(`https://api.rss2json.com/v1/api.json?${params}`);
-  if (!res.ok) throw new Error(`rss2json ${res.status}`);
-  const data = await res.json();
-  if (data.status !== 'ok') throw new Error(`rss2json: ${data.message || data.status}`);
-  return data.items.map((i: Record<string, string>) => ({
-    title: i.title || '',
-    link: i.link || '',
-    description: i.description || '',
-    pubDate: i.pubDate || '',
-    thumbnail: i.thumbnail || '',
-  }));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const params = new URLSearchParams({ rss_url: feedUrl });
+    const res = await fetch(
+      `https://api.rss2json.com/v1/api.json?${params}`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`rss2json HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.status !== 'ok') throw new Error(data.message || data.status);
+    return (data.items || []).map((i: Record<string, string>) => ({
+      title: i.title || '',
+      link: i.link || '',
+      description: i.description || '',
+      pubDate: i.pubDate || '',
+      thumbnail: i.thumbnail || '',
+    }));
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
 }
 
-// ========== XML PARSING ==========
+// Strategy 4: thingproxy
+async function fetchViaThingProxy(feedUrl: string): Promise<string> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(
+      `https://thingproxy.freeboard.io/fetch/${feedUrl}`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`thingproxy HTTP ${res.status}`);
+    const text = await res.text();
+    if (!text || text.length < 50 || text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+      throw new Error('thingproxy returned HTML instead of XML');
+    }
+    return text;
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+// ========== XML PARSER ==========
 
 function parseXml(xml: string): FeedItem[] {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, 'text/xml');
+  if (doc.querySelector('parsererror')) return [];
 
-  // Check for parse errors
-  if (doc.querySelector('parsererror')) {
-    return [];
-  }
-
-  // Handle RSS <item> and Atom <entry>
-  let items = doc.querySelectorAll('item');
-  if (items.length === 0) {
-    items = doc.querySelectorAll('entry');
-  }
+  let nodes = doc.querySelectorAll('item');
+  if (nodes.length === 0) nodes = doc.querySelectorAll('entry');
 
   const results: FeedItem[] = [];
-
-  items.forEach((item) => {
-    const title = item.querySelector('title')?.textContent?.trim() || '';
-
-    // RSS: <link>text</link>, Atom: <link href="..."/>
-    let link = item.querySelector('link')?.textContent?.trim() || '';
-    if (!link) {
-      link = item.querySelector('link')?.getAttribute('href')?.trim() || '';
-    }
-
-    const description =
-      item.querySelector('description')?.textContent ||
-      item.querySelector('summary')?.textContent ||
-      item.querySelector('content')?.textContent ||
-      '';
-
+  nodes.forEach((node) => {
+    const title = node.querySelector('title')?.textContent?.trim() || '';
+    let link = node.querySelector('link')?.textContent?.trim() || '';
+    if (!link) link = node.querySelector('link')?.getAttribute('href')?.trim() || '';
+    const desc =
+      node.querySelector('description')?.textContent ||
+      node.querySelector('summary')?.textContent || '';
     const pubDate =
-      item.querySelector('pubDate')?.textContent ||
-      item.querySelector('published')?.textContent ||
-      item.querySelector('updated')?.textContent ||
-      '';
+      node.querySelector('pubDate')?.textContent ||
+      node.querySelector('published')?.textContent ||
+      node.querySelector('updated')?.textContent || '';
 
-    const thumbnail =
-      item.querySelector('media\\:thumbnail')?.getAttribute('url') ||
-      item.querySelector('media\\:content')?.getAttribute('url') ||
-      '';
-
-    if (title && link) {
-      results.push({ title, link, description, pubDate, thumbnail });
+    // Extract thumbnail from media:content, media:thumbnail, or enclosure
+    let thumbnail = '';
+    const mediaContent = node.querySelector('content[url], thumbnail[url]');
+    if (mediaContent) {
+      thumbnail = mediaContent.getAttribute('url') || '';
     }
-  });
+    const enclosure = node.querySelector('enclosure[url]');
+    if (!thumbnail && enclosure) {
+      const type = enclosure.getAttribute('type') || '';
+      if (type.startsWith('image/')) {
+        thumbnail = enclosure.getAttribute('url') || '';
+      }
+    }
 
+    if (title && link) results.push({ title, link, description: desc, pubDate, thumbnail });
+  });
   return results;
 }
 
-// ========== FETCH WITH FALLBACK CHAIN ==========
+// ========== FETCH ONE FEED (with multi-proxy fallback) ==========
 
-async function fetchFeed(feedUrl: string): Promise<FeedItem[]> {
-  // Strategy 1: codetabs (works for 20/22 feeds, CORS ok, no rate limit)
+async function fetchOneFeed(feedUrl: string, sourceName: string): Promise<FeedItem[]> {
+  const errors: string[] = [];
+
+  // Try codetabs first (XML proxy)
   try {
     const xml = await fetchViaCodetabs(feedUrl);
     const items = parseXml(xml);
-    if (items.length > 0) return items;
-  } catch {
-    // fallthrough
+    if (items.length > 0) {
+      console.log(`[RSS] ${sourceName}: ${items.length} items via codetabs`);
+      return items;
+    }
+    errors.push('codetabs: 0 items parsed');
+  } catch (e) {
+    errors.push(`codetabs: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  // Strategy 2: rss2json (rate limited but works as fallback)
+  // Try allorigins (XML proxy)
+  try {
+    const xml = await fetchViaAllOrigins(feedUrl);
+    const items = parseXml(xml);
+    if (items.length > 0) {
+      console.log(`[RSS] ${sourceName}: ${items.length} items via allorigins`);
+      return items;
+    }
+    errors.push('allorigins: 0 items parsed');
+  } catch (e) {
+    errors.push(`allorigins: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // Try rss2json (JSON API — no XML parsing needed)
   try {
     const items = await fetchViaRss2Json(feedUrl);
-    if (items.length > 0) return items;
-  } catch {
-    // fallthrough
+    if (items.length > 0) {
+      console.log(`[RSS] ${sourceName}: ${items.length} items via rss2json`);
+      return items;
+    }
+    errors.push('rss2json: 0 items');
+  } catch (e) {
+    errors.push(`rss2json: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // Try thingproxy as last resort
+  try {
+    const xml = await fetchViaThingProxy(feedUrl);
+    const items = parseXml(xml);
+    if (items.length > 0) {
+      console.log(`[RSS] ${sourceName}: ${items.length} items via thingproxy`);
+      return items;
+    }
+    errors.push('thingproxy: 0 items parsed');
+  } catch (e) {
+    errors.push(`thingproxy: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  console.warn(`[RSS] ${sourceName}: ALL proxies failed`, errors);
   return [];
 }
 
-// ========== REDDIT URL EXTRACTION ==========
+// ========== HELPERS ==========
 
 function extractRedditUrl(item: FeedItem): string {
-  // Reddit RSS description contains the external link
-  const match = item.description?.match(/href="(https?:\/\/(?!www\.reddit\.com)[^"]+)"/);
-  if (match) return match[1];
-  return item.link;
+  const match = item.description?.match(
+    /href="(https?:\/\/(?!www\.reddit\.com)[^"]+)"/
+  );
+  return match ? match[1] : item.link;
 }
 
-// ========== SCORING ==========
-
-function computeScore(pubDate: string, index: number, descriptionLength: number): number {
-  let recencyScore = 0;
+function computeScore(pubDate: string, index: number, descLen: number): number {
+  let recency = 0;
   if (pubDate) {
-    const ageMs = Date.now() - new Date(pubDate).getTime();
-    const ageHours = ageMs / (1000 * 60 * 60);
-    if (ageHours < 6) recencyScore = 80;
-    else if (ageHours < 24) recencyScore = 65;
-    else if (ageHours < 48) recencyScore = 50;
-    else if (ageHours < 72) recencyScore = 40;
-    else if (ageHours < 168) recencyScore = 25;
-    else recencyScore = 10;
+    const h = (Date.now() - new Date(pubDate).getTime()) / 3600000;
+    if (h < 6) recency = 80;
+    else if (h < 24) recency = 65;
+    else if (h < 48) recency = 50;
+    else if (h < 72) recency = 40;
+    else if (h < 168) recency = 25;
+    else recency = 10;
   } else {
-    recencyScore = Math.max(5, 30 - index * 3);
+    recency = Math.max(5, 30 - index * 3);
   }
-
-  const lengthBonus = descriptionLength > 100 ? 8 : 0;
-  const positionBonus = Math.max(0, 12 - index * 2);
-
-  return recencyScore + lengthBonus + positionBonus;
+  return recency + (descLen > 100 ? 8 : 0) + Math.max(0, 12 - index * 2);
 }
 
-// ========== MAIN EXPORT ==========
+// ========== MAIN ==========
 
 export async function fetchRssFeeds(category: Category): Promise<Article[]> {
   const sources = RSS_SOURCES.filter((s) => s.category === category);
-  const results: Article[] = [];
+  const allArticles: Article[] = [];
 
-  // Fetch ALL feeds in parallel — codetabs has no rate limit
-  const fetchPromises = sources.map(async (source) => {
-    try {
-      const items = await fetchFeed(source.url);
-      const isReddit = source.name.startsWith('r/');
+  console.log(`[RSS] Fetching ${sources.length} feeds for category: ${category}`);
 
-      return items
-        .filter((item) => item.title && item.title.trim() !== '' && item.link && item.link.trim() !== '')
-        .slice(0, 10)
-        .map((item, index) => {
-          const description = stripHtml(item.description).slice(0, 250);
-          const url = isReddit ? extractRedditUrl(item) : item.link;
+  // Fetch all feeds concurrently (each feed has its own timeout/fallback)
+  const results = await Promise.all(
+    sources.map(async (source) => {
+      try {
+        const items = await fetchOneFeed(source.url, source.name);
+        const isReddit = source.name.startsWith('r/');
 
-          return {
-            id: `rss-${source.name}-${index}-${url}`,
-            title: stripHtml(item.title),
-            url,
-            source: source.name,
-            category,
-            score: computeScore(item.pubDate, index, description.length),
-            description,
-            publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : undefined,
-            thumbnail: item.thumbnail || undefined,
-          };
-        });
-    } catch {
-      console.warn(`[RSS] Failed to fetch: ${source.name}`);
-      return [];
-    }
-  });
+        return items
+          .filter((it) => it.title?.trim() && it.link?.trim())
+          .slice(0, 10)
+          .map((it, idx) => {
+            const desc = stripHtml(it.description).slice(0, 250);
+            const url = isReddit ? extractRedditUrl(it) : it.link;
+            return {
+              id: `rss-${source.name}-${idx}-${url}`,
+              title: stripHtml(it.title),
+              url,
+              source: source.name,
+              category,
+              score: computeScore(it.pubDate, idx, desc.length),
+              description: desc,
+              publishedAt: it.pubDate
+                ? new Date(it.pubDate).toISOString()
+                : undefined,
+              thumbnail: it.thumbnail || undefined,
+            };
+          });
+      } catch (e) {
+        console.error(`[RSS] ${source.name}: unexpected error`, e);
+        return [];
+      }
+    })
+  );
 
-  const allResults = await Promise.all(fetchPromises);
-  for (const batch of allResults) {
-    results.push(...batch);
-  }
+  for (const batch of results) allArticles.push(...batch);
 
-  return results;
+  console.log(`[RSS] Total articles for ${category}: ${allArticles.length}`);
+  return allArticles;
 }
