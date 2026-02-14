@@ -17,36 +17,51 @@ interface HNResponse {
   hits: HNHit[];
 }
 
-export async function fetchHackerNews(category: Category): Promise<Article[]> {
-  const terms = HN_SEARCH_TERMS[category];
-  const query = terms.slice(0, 3).join(' OR ');
-
+async function searchHN(query: string): Promise<HNHit[]> {
   const params = new URLSearchParams({
     query,
     tags: 'story',
-    hitsPerPage: '20',
-    numericFilters: 'points>10',
+    hitsPerPage: '15',
+    numericFilters: 'points>20',
   });
 
   try {
     const res = await fetch(`${HN_API}?${params}`);
     if (!res.ok) return [];
     const data: HNResponse = await res.json();
-
-    return data.hits
-      .filter((hit) => hit.url)
-      .map((hit) => ({
-        id: `hn-${hit.objectID}`,
-        title: hit.title,
-        url: hit.url!,
-        source: 'Hacker News',
-        category,
-        score: hit.points + hit.num_comments * 2,
-        description: hit.story_text?.slice(0, 200),
-        publishedAt: hit.created_at,
-      }));
+    return data.hits;
   } catch {
-    console.warn(`[HN] Failed to fetch for category: ${category}`);
     return [];
   }
+}
+
+export async function fetchHackerNews(category: Category): Promise<Article[]> {
+  const terms = HN_SEARCH_TERMS[category];
+
+  // Fetch each term separately because Algolia doesn't support OR in query string
+  const allHits = await Promise.all(terms.map((term) => searchHN(term)));
+  const flatHits = allHits.flat();
+
+  // Deduplicate by objectID
+  const seen = new Set<string>();
+  const uniqueHits: HNHit[] = [];
+  for (const hit of flatHits) {
+    if (!seen.has(hit.objectID)) {
+      seen.add(hit.objectID);
+      uniqueHits.push(hit);
+    }
+  }
+
+  return uniqueHits
+    .filter((hit) => hit.title && hit.title.trim() !== '')
+    .map((hit) => ({
+      id: `hn-${hit.objectID}`,
+      title: hit.title,
+      url: hit.url || `https://news.ycombinator.com/item?id=${hit.objectID}`,
+      source: 'Hacker News',
+      category,
+      score: hit.points + hit.num_comments * 2,
+      description: hit.story_text?.slice(0, 200),
+      publishedAt: hit.created_at,
+    }));
 }

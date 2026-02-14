@@ -26,7 +26,8 @@ function stripHtml(html: string): string {
 }
 
 async function fetchViaRss2Json(feedUrl: string): Promise<Rss2JsonItem[]> {
-  const params = new URLSearchParams({ rss_url: feedUrl, count: '15' });
+  // Don't use &count param — it requires a paid API key now
+  const params = new URLSearchParams({ rss_url: feedUrl });
   const res = await fetch(`${RSS2JSON_API}?${params}`);
   if (!res.ok) throw new Error(`rss2json failed: ${res.status}`);
   const data: Rss2JsonResponse = await res.json();
@@ -44,16 +45,34 @@ async function fetchViaAllOrigins(feedUrl: string): Promise<Rss2JsonItem[]> {
 function parseXml(xml: string): Rss2JsonItem[] {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, 'text/xml');
-  const items = doc.querySelectorAll('item');
+
+  // Handle both RSS <item> and Atom <entry>
+  let items = doc.querySelectorAll('item');
+  if (items.length === 0) {
+    items = doc.querySelectorAll('entry');
+  }
+
   const results: Rss2JsonItem[] = [];
 
   items.forEach((item) => {
-    results.push({
-      title: item.querySelector('title')?.textContent || '',
-      link: item.querySelector('link')?.textContent || '',
-      description: item.querySelector('description')?.textContent || '',
-      pubDate: item.querySelector('pubDate')?.textContent || '',
-    });
+    const title = item.querySelector('title')?.textContent || '';
+    // For Atom feeds, link might be an attribute
+    let link = item.querySelector('link')?.textContent || '';
+    if (!link) {
+      link = item.querySelector('link')?.getAttribute('href') || '';
+    }
+    const description = item.querySelector('description')?.textContent
+      || item.querySelector('summary')?.textContent
+      || item.querySelector('content')?.textContent
+      || '';
+    const pubDate = item.querySelector('pubDate')?.textContent
+      || item.querySelector('published')?.textContent
+      || item.querySelector('updated')?.textContent
+      || '';
+
+    if (title && link) {
+      results.push({ title, link, description, pubDate });
+    }
   });
 
   return results;
@@ -63,7 +82,8 @@ export async function fetchRssFeeds(category: Category): Promise<Article[]> {
   const sources = RSS_SOURCES.filter((s) => s.category === category);
   const results: Article[] = [];
 
-  for (const source of sources) {
+  // Fetch all sources in parallel for speed
+  const fetchPromises = sources.map(async (source) => {
     try {
       let items: Rss2JsonItem[];
       try {
@@ -73,30 +93,37 @@ export async function fetchRssFeeds(category: Category): Promise<Article[]> {
       }
 
       const now = Date.now();
-      const articles = items.map((item, index) => {
-        const description = stripHtml(item.description).slice(0, 250);
-        const recencyScore = Math.max(0, 50 - index * 3);
-        const lengthBonus = description.length > 100 ? 10 : 0;
+      return items
+        .filter((item) => item.title && item.title.trim() !== '' && item.link && item.link.trim() !== '')
+        .slice(0, 15)
+        .map((item, index) => {
+          const description = stripHtml(item.description).slice(0, 250);
+          const recencyScore = Math.max(0, 50 - index * 3);
+          const lengthBonus = description.length > 100 ? 10 : 0;
 
-        return {
-          id: `rss-${source.name}-${index}-${item.link}`,
-          title: item.title,
-          url: item.link,
-          source: source.name,
-          category,
-          score: recencyScore + lengthBonus,
-          description,
-          publishedAt: item.pubDate
-            ? new Date(item.pubDate).toISOString()
-            : new Date(now - index * 3600000).toISOString(),
-          thumbnail: item.thumbnail || item.enclosure?.link,
-        };
-      });
-
-      results.push(...articles);
+          return {
+            id: `rss-${source.name}-${index}-${item.link}`,
+            title: item.title,
+            url: item.link,
+            source: source.name,
+            category,
+            score: recencyScore + lengthBonus,
+            description,
+            publishedAt: item.pubDate
+              ? new Date(item.pubDate).toISOString()
+              : new Date(now - index * 3600000).toISOString(),
+            thumbnail: item.thumbnail || item.enclosure?.link,
+          };
+        });
     } catch {
       console.warn(`[RSS] Failed to fetch: ${source.name}`);
+      return [];
     }
+  });
+
+  const allResults = await Promise.all(fetchPromises);
+  for (const batch of allResults) {
+    results.push(...batch);
   }
 
   return results;

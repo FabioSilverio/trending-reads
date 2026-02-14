@@ -33,6 +33,23 @@ function normalizeUrl(url: string): string {
   }
 }
 
+/**
+ * Filter out articles with missing/broken title or URL
+ */
+export function filterValid(articles: Article[]): Article[] {
+  return articles.filter((a) => {
+    if (!a.title || a.title.trim() === '') return false;
+    if (!a.url || a.url.trim() === '') return false;
+    // Must be a real URL
+    try {
+      new URL(a.url);
+    } catch {
+      return false;
+    }
+    return true;
+  });
+}
+
 export function sortByScore(articles: Article[]): Article[] {
   return [...articles].sort((a, b) => b.score - a.score);
 }

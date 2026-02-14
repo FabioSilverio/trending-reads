@@ -3,7 +3,7 @@ import type { Article, Category } from '../types/article';
 import { fetchHackerNews } from '../services/hackerNewsService';
 import { fetchReddit } from '../services/redditService';
 import { fetchRssFeeds } from '../services/rssFeedService';
-import { normalizeScores, deduplicateArticles, sortByScore, filterBySearch } from '../utils/articleNormalizer';
+import { normalizeScores, deduplicateArticles, sortByScore, filterBySearch, filterValid } from '../utils/articleNormalizer';
 import { getCached, getStale, setCache, isCacheFresh } from '../utils/cache';
 
 function cacheKey(category: Category) {
@@ -28,7 +28,8 @@ export function useArticles(category: Category, searchQuery: string) {
       ...(rss.status === 'fulfilled' ? rss.value : []),
     ];
 
-    const deduplicated = deduplicateArticles(all);
+    const valid = filterValid(all);
+    const deduplicated = deduplicateArticles(valid);
     const normalized = normalizeScores(deduplicated);
     const sorted = sortByScore(normalized);
 
