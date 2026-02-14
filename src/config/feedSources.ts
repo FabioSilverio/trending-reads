@@ -14,7 +14,7 @@ export const HN_SEARCH_TERMS: Record<Category, string[]> = {
   ciencia: ['science', 'physics', 'neuroscience'],
 };
 
-// All feeds (RSS + Reddit RSS) unified — fetched via rss2json
+// All feeds (RSS + Reddit RSS) unified — fetched via codetabs CORS proxy
 export const RSS_SOURCES: FeedSource[] = [
   // ===== FILOSOFIA =====
   { name: 'Aeon', url: 'https://aeon.co/feed.rss', type: 'rss', category: 'filosofia' },
@@ -26,7 +26,7 @@ export const RSS_SOURCES: FeedSource[] = [
   // ===== ENTRETENIMENTO =====
   { name: 'Longreads', url: 'https://longreads.com/feed/', type: 'rss', category: 'entretenimento' },
   { name: 'The Atlantic - Culture', url: 'https://www.theatlantic.com/feed/channel/entertainment/', type: 'rss', category: 'entretenimento' },
-  { name: 'Literary Hub', url: 'https://lithub.com/feed/', type: 'rss', category: 'entretenimento' },
+  { name: 'Open Culture', url: 'https://www.openculture.com/feed', type: 'rss', category: 'entretenimento' },
   { name: 'The New Yorker - Culture', url: 'https://www.newyorker.com/feed/culture', type: 'rss', category: 'entretenimento' },
   { name: 'r/TrueFilm', url: 'https://www.reddit.com/r/TrueFilm/top/.rss?t=week', type: 'rss', category: 'entretenimento' },
 
@@ -42,7 +42,7 @@ export const RSS_SOURCES: FeedSource[] = [
   { name: 'Quanta Magazine', url: 'https://api.quantamagazine.org/feed/', type: 'rss', category: 'ciencia' },
   { name: 'Nature News', url: 'https://www.nature.com/nature.rss', type: 'rss', category: 'ciencia' },
   { name: 'Science Daily', url: 'https://www.sciencedaily.com/rss/all.xml', type: 'rss', category: 'ciencia' },
-  { name: 'Phys.org', url: 'https://phys.org/rss-feed/', type: 'rss', category: 'ciencia' },
+  { name: 'Scientific American', url: 'https://www.scientificamerican.com/feed/', type: 'rss', category: 'ciencia' },
   { name: 'New Scientist', url: 'https://www.newscientist.com/feed/home/', type: 'rss', category: 'ciencia' },
   { name: 'r/science', url: 'https://www.reddit.com/r/science/top/.rss?t=week', type: 'rss', category: 'ciencia' },
 ];
