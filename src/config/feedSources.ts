@@ -8,43 +8,46 @@ export const CATEGORY_LABELS: Record<Category, string> = {
 };
 
 export const HN_SEARCH_TERMS: Record<Category, string[]> = {
-  filosofia: ['philosophy', 'ethics', 'existentialism', 'stoicism', 'moral philosophy'],
-  entretenimento: ['film essay', 'book review', 'culture essay', 'longread entertainment'],
-  tecnologia: ['programming', 'software engineering', 'AI', 'machine learning', 'startup'],
-  ciencia: ['science', 'physics', 'biology', 'neuroscience', 'climate', 'research'],
+  filosofia: ['philosophy', 'ethics', 'stoicism'],
+  entretenimento: ['film essay', 'book review', 'culture'],
+  tecnologia: ['programming', 'software engineering', 'AI'],
+  ciencia: ['science', 'physics', 'neuroscience'],
 };
 
-export const REDDIT_SOURCES: FeedSource[] = [
-  { name: 'r/philosophy', url: 'https://www.reddit.com/r/philosophy/top.json?t=week&limit=15', type: 'reddit', category: 'filosofia' },
-  { name: 'r/PhilosophyofScience', url: 'https://www.reddit.com/r/PhilosophyofScience/top.json?t=week&limit=10', type: 'reddit', category: 'filosofia' },
-  { name: 'r/TrueFilm', url: 'https://www.reddit.com/r/TrueFilm/top.json?t=week&limit=15', type: 'reddit', category: 'entretenimento' },
-  { name: 'r/books', url: 'https://www.reddit.com/r/books/top.json?t=week&limit=10', type: 'reddit', category: 'entretenimento' },
-  { name: 'r/technology', url: 'https://www.reddit.com/r/technology/top.json?t=week&limit=15', type: 'reddit', category: 'tecnologia' },
-  { name: 'r/programming', url: 'https://www.reddit.com/r/programming/top.json?t=week&limit=15', type: 'reddit', category: 'tecnologia' },
-  { name: 'r/science', url: 'https://www.reddit.com/r/science/top.json?t=week&limit=15', type: 'reddit', category: 'ciencia' },
-  { name: 'r/EverythingScience', url: 'https://www.reddit.com/r/EverythingScience/top.json?t=week&limit=10', type: 'reddit', category: 'ciencia' },
-];
-
+// All feeds (RSS + Reddit RSS) unified — fetched via rss2json
 export const RSS_SOURCES: FeedSource[] = [
-  // Filosofia
+  // ===== FILOSOFIA =====
   { name: 'Aeon', url: 'https://aeon.co/feed.rss', type: 'rss', category: 'filosofia' },
   { name: 'The Marginalian', url: 'https://www.themarginalian.org/feed/', type: 'rss', category: 'filosofia' },
   { name: 'Daily Nous', url: 'https://dailynous.com/feed/', type: 'rss', category: 'filosofia' },
+  { name: 'IAI News', url: 'https://iai.tv/rss/articles', type: 'rss', category: 'filosofia' },
+  { name: 'r/philosophy', url: 'https://www.reddit.com/r/philosophy/top/.rss?t=week', type: 'rss', category: 'filosofia' },
 
-  // Entretenimento
+  // ===== ENTRETENIMENTO =====
   { name: 'Longreads', url: 'https://longreads.com/feed/', type: 'rss', category: 'entretenimento' },
   { name: 'The Atlantic - Culture', url: 'https://www.theatlantic.com/feed/channel/entertainment/', type: 'rss', category: 'entretenimento' },
   { name: 'Literary Hub', url: 'https://lithub.com/feed/', type: 'rss', category: 'entretenimento' },
+  { name: 'The New Yorker - Culture', url: 'https://www.newyorker.com/feed/culture', type: 'rss', category: 'entretenimento' },
+  { name: 'r/TrueFilm', url: 'https://www.reddit.com/r/TrueFilm/top/.rss?t=week', type: 'rss', category: 'entretenimento' },
 
-  // Tecnologia
+  // ===== TECNOLOGIA =====
   { name: 'Ars Technica', url: 'https://feeds.arstechnica.com/arstechnica/index', type: 'rss', category: 'tecnologia' },
   { name: 'Wired', url: 'https://www.wired.com/feed/rss', type: 'rss', category: 'tecnologia' },
   { name: 'MIT Technology Review', url: 'https://www.technologyreview.com/feed/', type: 'rss', category: 'tecnologia' },
+  { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml', type: 'rss', category: 'tecnologia' },
+  { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', type: 'rss', category: 'tecnologia' },
+  { name: 'r/programming', url: 'https://www.reddit.com/r/programming/top/.rss?t=week', type: 'rss', category: 'tecnologia' },
 
-  // Ciência
+  // ===== CIÊNCIA =====
   { name: 'Quanta Magazine', url: 'https://api.quantamagazine.org/feed/', type: 'rss', category: 'ciencia' },
   { name: 'Nature News', url: 'https://www.nature.com/nature.rss', type: 'rss', category: 'ciencia' },
   { name: 'Science Daily', url: 'https://www.sciencedaily.com/rss/all.xml', type: 'rss', category: 'ciencia' },
+  { name: 'Phys.org', url: 'https://phys.org/rss-feed/', type: 'rss', category: 'ciencia' },
+  { name: 'New Scientist', url: 'https://www.newscientist.com/feed/home/', type: 'rss', category: 'ciencia' },
+  { name: 'r/science', url: 'https://www.reddit.com/r/science/top/.rss?t=week', type: 'rss', category: 'ciencia' },
 ];
 
 export const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+// Delay between rss2json requests to avoid rate limiting (ms)
+export const RSS_FETCH_DELAY_MS = 800;

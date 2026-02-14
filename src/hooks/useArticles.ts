@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Article, Category } from '../types/article';
 import { fetchHackerNews } from '../services/hackerNewsService';
-import { fetchReddit } from '../services/redditService';
 import { fetchRssFeeds } from '../services/rssFeedService';
 import { normalizeScores, deduplicateArticles, sortByScore, filterBySearch, filterValid } from '../utils/articleNormalizer';
 import { getCached, getStale, setCache, isCacheFresh } from '../utils/cache';
@@ -16,15 +15,14 @@ export function useArticles(category: Category, searchQuery: string) {
   const [error, setError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async (cat: Category) => {
-    const [hn, reddit, rss] = await Promise.allSettled([
+    // HN and RSS run in parallel — RSS handles Reddit feeds too now
+    const [hn, rss] = await Promise.allSettled([
       fetchHackerNews(cat),
-      fetchReddit(cat),
       fetchRssFeeds(cat),
     ]);
 
     const all: Article[] = [
       ...(hn.status === 'fulfilled' ? hn.value : []),
-      ...(reddit.status === 'fulfilled' ? reddit.value : []),
       ...(rss.status === 'fulfilled' ? rss.value : []),
     ];
 
