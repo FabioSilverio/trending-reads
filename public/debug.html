@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trending Reads - Feed Debug</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0f0f13; color: #e4e4ef; font-family: monospace; padding: 20px; }
+  h1 { color: #7c6df0; margin-bottom: 20px; }
+  h2 { color: #9595a8; margin: 20px 0 10px; font-size: 14px; text-transform: uppercase; }
+  .feed { padding: 8px 12px; margin: 4px 0; border-radius: 6px; font-size: 13px; }
+  .feed.pending { background: #1a1a24; color: #6b6b80; }
+  .feed.ok { background: #0f2a1a; color: #22c55e; }
+  .feed.fail { background: #2a0f0f; color: #ef4444; }
+  .feed .name { font-weight: bold; }
+  .feed .detail { margin-left: 10px; opacity: 0.8; }
+  .items { margin: 4px 0 4px 20px; font-size: 11px; color: #9595a8; }
+  .items li { margin: 2px 0; }
+  #summary { padding: 15px; background: #1a1a24; border-radius: 8px; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<h1>🔧 Feed Debug</h1>
+<div id="summary">Testando feeds...</div>
+<div id="results"></div>
+
+<script>
+const CODETABS = 'https://api.codetabs.com/v1/proxy/?quest=';
+const RSS2JSON = 'https://api.rss2json.com/v1/api.json?rss_url=';
+
+const FEEDS = {
+  'FILOSOFIA': [
+    { name: 'Aeon', url: 'https://aeon.co/feed.rss' },
+    { name: 'The Marginalian', url: 'https://www.themarginalian.org/feed/' },
+    { name: 'Daily Nous', url: 'https://dailynous.com/feed/' },
+    { name: 'IAI News', url: 'https://iai.tv/rss/articles' },
+    { name: 'r/philosophy', url: 'https://www.reddit.com/r/philosophy/top/.rss?t=week' },
+  ],
+  'ENTRETENIMENTO': [
+    { name: 'Longreads', url: 'https://longreads.com/feed/' },
+    { name: 'The Atlantic', url: 'https://www.theatlantic.com/feed/channel/entertainment/' },
+    { name: 'Open Culture', url: 'https://www.openculture.com/feed' },
+    { name: 'New Yorker', url: 'https://www.newyorker.com/feed/culture' },
+    { name: 'r/TrueFilm', url: 'https://www.reddit.com/r/TrueFilm/top/.rss?t=week' },
+  ],
+  'TECNOLOGIA': [
+    { name: 'Ars Technica', url: 'https://feeds.arstechnica.com/arstechnica/index' },
+    { name: 'Wired', url: 'https://www.wired.com/feed/rss' },
+    { name: 'MIT Tech Review', url: 'https://www.technologyreview.com/feed/' },
+    { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml' },
+    { name: 'TechCrunch', url: 'https://techcrunch.com/feed/' },
+    { name: 'r/programming', url: 'https://www.reddit.com/r/programming/top/.rss?t=week' },
+  ],
+  'CIENCIA': [
+    { name: 'Quanta Magazine', url: 'https://api.quantamagazine.org/feed/' },
+    { name: 'Nature News', url: 'https://www.nature.com/nature.rss' },
+    { name: 'Science Daily', url: 'https://www.sciencedaily.com/rss/all.xml' },
+    { name: 'Scientific American', url: 'https://www.scientificamerican.com/feed/' },
+    { name: 'New Scientist', url: 'https://www.newscientist.com/feed/home/' },
+    { name: 'r/science', url: 'https://www.reddit.com/r/science/top/.rss?t=week' },
+  ],
+};
+
+function parseXml(xml) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, 'text/xml');
+  if (doc.querySelector('parsererror')) return { error: 'XML parse error', items: [] };
+  let items = doc.querySelectorAll('item');
+  if (items.length === 0) items = doc.querySelectorAll('entry');
+  const results = [];
+  items.forEach(item => {
+    const title = item.querySelector('title')?.textContent?.trim() || '';
+    let link = item.querySelector('link')?.textContent?.trim() || '';
+    if (!link) link = item.querySelector('link')?.getAttribute('href')?.trim() || '';
+    if (title) results.push({ title, link });
+  });
+  return { error: null, items: results };
+}
+
+let okCount = 0, failCount = 0, totalCount = 0;
+
+async function testFeed(name, url, container) {
+  totalCount++;
+  const div = document.createElement('div');
+  div.className = 'feed pending';
+  div.innerHTML = `<span class="name">${name}</span> <span class="detail">testing codetabs...</span>`;
+  container.appendChild(div);
+
+  // Test 1: codetabs
+  try {
+    const proxyUrl = CODETABS + encodeURIComponent(url);
+    const res = await fetch(proxyUrl);
+    const text = await res.text();
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (text.startsWith('<!DOCTYPE html') || text.startsWith('<html')) throw new Error('Got HTML page, not XML');
+    if (text.length < 50) throw new Error(`Response too small: ${text.length} bytes`);
+
+    const parsed = parseXml(text);
+    if (parsed.error) throw new Error(parsed.error);
+    if (parsed.items.length === 0) throw new Error('0 items parsed from XML');
+
+    div.className = 'feed ok';
+    div.innerHTML = `<span class="name">✅ ${name}</span> <span class="detail">codetabs OK — ${parsed.items.length} items, ${text.length}B</span>`;
+    const ul = document.createElement('ul');
+    ul.className = 'items';
+    parsed.items.slice(0, 3).forEach(item => {
+      const li = document.createElement('li');
+      li.textContent = item.title.slice(0, 80) + (item.link ? ` → ${item.link.slice(0, 50)}` : ' → NO LINK');
+      ul.appendChild(li);
+    });
+    div.appendChild(ul);
+    okCount++;
+  } catch (e1) {
+    // Test 2: rss2json fallback
+    div.querySelector('.detail').textContent = `codetabs failed (${e1.message}), trying rss2json...`;
+    try {
+      const res = await fetch(RSS2JSON + encodeURIComponent(url));
+      const data = await res.json();
+      if (data.status !== 'ok') throw new Error(`rss2json: ${data.message || data.status}`);
+      if (!data.items || data.items.length === 0) throw new Error('rss2json: 0 items');
+
+      div.className = 'feed ok';
+      div.innerHTML = `<span class="name">⚠️ ${name}</span> <span class="detail">rss2json fallback OK — ${data.items.length} items (codetabs: ${e1.message})</span>`;
+      const ul = document.createElement('ul');
+      ul.className = 'items';
+      data.items.slice(0, 3).forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = (item.title || 'NO TITLE').slice(0, 80) + ` → ${(item.link || 'NO LINK').slice(0, 50)}`;
+        ul.appendChild(li);
+      });
+      div.appendChild(ul);
+      okCount++;
+    } catch (e2) {
+      div.className = 'feed fail';
+      div.innerHTML = `<span class="name">❌ ${name}</span> <span class="detail">BOTH FAILED — codetabs: ${e1.message} | rss2json: ${e2.message}</span>`;
+      failCount++;
+    }
+  }
+
+  document.getElementById('summary').textContent =
+    `Resultados: ${okCount} OK, ${failCount} FALHAS de ${totalCount} feeds testados`;
+}
+
+async function runAll() {
+  const results = document.getElementById('results');
+  for (const [category, feeds] of Object.entries(FEEDS)) {
+    const h2 = document.createElement('h2');
+    h2.textContent = category;
+    results.appendChild(h2);
+    // Run feeds of this category in parallel
+    await Promise.all(feeds.map(f => testFeed(f.name, f.url, results)));
+  }
+}
+
+runAll();
+</script>
+</body>
+</html>
