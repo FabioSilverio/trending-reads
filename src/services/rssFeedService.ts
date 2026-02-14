@@ -40,29 +40,7 @@ async function fetchViaCodetabs(feedUrl: string): Promise<string> {
   }
 }
 
-// Strategy 2: allorigins proxy
-async function fetchViaAllOrigins(feedUrl: string): Promise<string> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-  try {
-    const res = await fetch(
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`,
-      { signal: controller.signal }
-    );
-    clearTimeout(timeout);
-    if (!res.ok) throw new Error(`allorigins HTTP ${res.status}`);
-    const text = await res.text();
-    if (!text || text.length < 50 || text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
-      throw new Error('allorigins returned HTML instead of XML');
-    }
-    return text;
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
-  }
-}
-
-// Strategy 3: rss2json API (returns JSON, not XML)
+// Strategy 2: rss2json API (returns JSON, not XML)
 async function fetchViaRss2Json(feedUrl: string): Promise<FeedItem[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
@@ -83,28 +61,6 @@ async function fetchViaRss2Json(feedUrl: string): Promise<FeedItem[]> {
       pubDate: i.pubDate || '',
       thumbnail: i.thumbnail || '',
     }));
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
-  }
-}
-
-// Strategy 4: thingproxy
-async function fetchViaThingProxy(feedUrl: string): Promise<string> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-  try {
-    const res = await fetch(
-      `https://thingproxy.freeboard.io/fetch/${feedUrl}`,
-      { signal: controller.signal }
-    );
-    clearTimeout(timeout);
-    if (!res.ok) throw new Error(`thingproxy HTTP ${res.status}`);
-    const text = await res.text();
-    if (!text || text.length < 50 || text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
-      throw new Error('thingproxy returned HTML instead of XML');
-    }
-    return text;
   } catch (e) {
     clearTimeout(timeout);
     throw e;
@@ -158,7 +114,7 @@ function parseXml(xml: string): FeedItem[] {
 async function fetchOneFeed(feedUrl: string, sourceName: string): Promise<FeedItem[]> {
   const errors: string[] = [];
 
-  // Try codetabs first (XML proxy)
+  // Try codetabs first (returns raw XML, CORS: *)
   try {
     const xml = await fetchViaCodetabs(feedUrl);
     const items = parseXml(xml);
@@ -171,20 +127,7 @@ async function fetchOneFeed(feedUrl: string, sourceName: string): Promise<FeedIt
     errors.push(`codetabs: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  // Try allorigins (XML proxy)
-  try {
-    const xml = await fetchViaAllOrigins(feedUrl);
-    const items = parseXml(xml);
-    if (items.length > 0) {
-      console.log(`[RSS] ${sourceName}: ${items.length} items via allorigins`);
-      return items;
-    }
-    errors.push('allorigins: 0 items parsed');
-  } catch (e) {
-    errors.push(`allorigins: ${e instanceof Error ? e.message : String(e)}`);
-  }
-
-  // Try rss2json (JSON API — no XML parsing needed)
+  // Fallback: rss2json (returns JSON, no XML parsing needed)
   try {
     const items = await fetchViaRss2Json(feedUrl);
     if (items.length > 0) {
@@ -194,19 +137,6 @@ async function fetchOneFeed(feedUrl: string, sourceName: string): Promise<FeedIt
     errors.push('rss2json: 0 items');
   } catch (e) {
     errors.push(`rss2json: ${e instanceof Error ? e.message : String(e)}`);
-  }
-
-  // Try thingproxy as last resort
-  try {
-    const xml = await fetchViaThingProxy(feedUrl);
-    const items = parseXml(xml);
-    if (items.length > 0) {
-      console.log(`[RSS] ${sourceName}: ${items.length} items via thingproxy`);
-      return items;
-    }
-    errors.push('thingproxy: 0 items parsed');
-  } catch (e) {
-    errors.push(`thingproxy: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   console.warn(`[RSS] ${sourceName}: ALL proxies failed`, errors);
