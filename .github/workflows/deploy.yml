@@ -3,6 +3,9 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [master]
+  schedule:
+    # Run every 30 minutes to refresh feeds
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -29,6 +32,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Fetch feeds (server-side, no CORS)
+        run: node scripts/fetch-feeds.mjs
 
       - name: Build
         run: npm run build

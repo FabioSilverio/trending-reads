@@ -20,12 +20,12 @@ export const RSS_SOURCES: FeedSource[] = [
   { name: 'Aeon', url: 'https://aeon.co/feed.rss', type: 'rss', category: 'filosofia' },
   { name: 'The Marginalian', url: 'https://www.themarginalian.org/feed/', type: 'rss', category: 'filosofia' },
   { name: 'Daily Nous', url: 'https://dailynous.com/feed/', type: 'rss', category: 'filosofia' },
-  { name: 'IAI News', url: 'https://iai.tv/rss/articles', type: 'rss', category: 'filosofia' },
+  { name: 'Stanford Encyclopedia', url: 'https://plato.stanford.edu/rss/sep.xml', type: 'rss', category: 'filosofia' },
   { name: 'r/philosophy', url: 'https://www.reddit.com/r/philosophy/top/.rss?t=week', type: 'rss', category: 'filosofia' },
 
   // ===== ENTRETENIMENTO =====
   { name: 'Longreads', url: 'https://longreads.com/feed/', type: 'rss', category: 'entretenimento' },
-  { name: 'The Atlantic - Culture', url: 'https://www.theatlantic.com/feed/channel/entertainment/', type: 'rss', category: 'entretenimento' },
+  { name: 'The Guardian - Culture', url: 'https://www.theguardian.com/culture/rss', type: 'rss', category: 'entretenimento' },
   { name: 'Open Culture', url: 'https://www.openculture.com/feed', type: 'rss', category: 'entretenimento' },
   { name: 'The New Yorker - Culture', url: 'https://www.newyorker.com/feed/culture', type: 'rss', category: 'entretenimento' },
   { name: 'r/TrueFilm', url: 'https://www.reddit.com/r/TrueFilm/top/.rss?t=week', type: 'rss', category: 'entretenimento' },
@@ -42,7 +42,7 @@ export const RSS_SOURCES: FeedSource[] = [
   { name: 'Quanta Magazine', url: 'https://api.quantamagazine.org/feed/', type: 'rss', category: 'ciencia' },
   { name: 'Nature News', url: 'https://www.nature.com/nature.rss', type: 'rss', category: 'ciencia' },
   { name: 'Science Daily', url: 'https://www.sciencedaily.com/rss/all.xml', type: 'rss', category: 'ciencia' },
-  { name: 'Scientific American', url: 'https://www.scientificamerican.com/feed/', type: 'rss', category: 'ciencia' },
+  { name: 'Phys.org', url: 'https://phys.org/rss-feed/', type: 'rss', category: 'ciencia' },
   { name: 'New Scientist', url: 'https://www.newscientist.com/feed/home/', type: 'rss', category: 'ciencia' },
   { name: 'r/science', url: 'https://www.reddit.com/r/science/top/.rss?t=week', type: 'rss', category: 'ciencia' },
 ];

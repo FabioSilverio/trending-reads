@@ -1,62 +1,65 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Article, Category } from '../types/article';
-import { fetchHackerNews } from '../services/hackerNewsService';
-import { fetchRssFeeds } from '../services/rssFeedService';
-import { normalizeScores, deduplicateArticles, sortByScore, filterBySearch, filterValid } from '../utils/articleNormalizer';
-import { getCached, getStale, setCache, isCacheFresh } from '../utils/cache';
+import { filterBySearch } from '../utils/articleNormalizer';
 
-// Cache version — bump this to invalidate old caches
-const CACHE_VERSION = 'v3';
+// Base path for GitHub Pages
+const BASE = import.meta.env.BASE_URL || '/trending-reads/';
 
-function cacheKey(category: Category) {
-  return `trending-reads-${CACHE_VERSION}-${category}`;
+interface FeedsData {
+  generatedAt: string;
+  categories: Record<string, Article[]>;
 }
 
-// Clear old cache entries on load
-try {
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && key.startsWith('trending-reads-') && !key.includes(CACHE_VERSION)) {
-      localStorage.removeItem(key);
+// In-memory cache of the fetched feeds.json
+let feedsCache: FeedsData | null = null;
+let feedsFetchPromise: Promise<FeedsData | null> | null = null;
+
+async function loadFeeds(): Promise<FeedsData | null> {
+  // Return cached data if available
+  if (feedsCache) return feedsCache;
+
+  // Deduplicate in-flight requests
+  if (feedsFetchPromise) return feedsFetchPromise;
+
+  feedsFetchPromise = (async () => {
+    try {
+      const url = `${BASE}data/feeds.json`;
+      console.log(`[useArticles] Fetching feeds from: ${url}`);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: FeedsData = await res.json();
+      console.log(`[useArticles] Feeds loaded, generated at: ${data.generatedAt}`);
+      feedsCache = data;
+      return data;
+    } catch (e) {
+      console.error('[useArticles] Failed to load feeds.json:', e);
+      return null;
+    } finally {
+      feedsFetchPromise = null;
     }
-  }
-} catch { /* ignore */ }
+  })();
+
+  return feedsFetchPromise;
+}
 
 export function useArticles(category: Category | null, searchQuery: string) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
 
-  const fetchAll = useCallback(async (cat: Category) => {
-    console.log(`[useArticles] Fetching category: ${cat}`);
+  const fetchCategory = useCallback(async (cat: Category) => {
+    const feeds = await loadFeeds();
+    if (!feeds) throw new Error('Dados indisponíveis');
 
-    // HN and RSS run in parallel — RSS handles Reddit feeds too now
-    const [hn, rss] = await Promise.allSettled([
-      fetchHackerNews(cat),
-      fetchRssFeeds(cat),
-    ]);
+    const categoryArticles = feeds.categories[cat] || [];
+    setGeneratedAt(feeds.generatedAt);
 
-    const hnArticles = hn.status === 'fulfilled' ? hn.value : [];
-    const rssArticles = rss.status === 'fulfilled' ? rss.value : [];
+    console.log(`[useArticles] ${cat}: ${categoryArticles.length} articles`);
+    const sources = new Set(categoryArticles.map(a => a.source));
+    console.log(`[useArticles] Sources: ${[...sources].join(', ')}`);
 
-    console.log(`[useArticles] HN: ${hnArticles.length} articles, RSS: ${rssArticles.length} articles`);
-    if (hn.status === 'rejected') console.error('[useArticles] HN failed:', hn.reason);
-    if (rss.status === 'rejected') console.error('[useArticles] RSS failed:', rss.reason);
-
-    // Log unique sources
-    const sources = new Set(rssArticles.map(a => a.source));
-    console.log(`[useArticles] RSS sources:`, [...sources]);
-
-    const all: Article[] = [...hnArticles, ...rssArticles];
-
-    const valid = filterValid(all);
-    const deduplicated = deduplicateArticles(valid);
-    const normalized = normalizeScores(deduplicated);
-    const sorted = sortByScore(normalized);
-
-    console.log(`[useArticles] Final: ${sorted.length} articles (${valid.length} valid, ${deduplicated.length} unique)`);
-
-    return sorted;
+    return categoryArticles;
   }, []);
 
   useEffect(() => {
@@ -68,48 +71,25 @@ export function useArticles(category: Category | null, searchQuery: string) {
     }
 
     let cancelled = false;
+    setLoading(true);
+    setError(null);
 
-    async function load() {
-      setError(null);
-
-      // Show stale data immediately
-      const stale = getStale<Article[]>(cacheKey(category!));
-      if (stale && stale.length > 0) {
-        setArticles(stale);
-        setLoading(false);
-      } else {
-        setLoading(true);
-      }
-
-      // If cache is fresh, don't refetch
-      const fresh = getCached<Article[]>(cacheKey(category!));
-      if (fresh) {
-        if (!cancelled) {
-          setArticles(fresh);
-          setLoading(false);
-        }
-        return;
-      }
-
-      // Fetch in background
-      try {
-        const data = await fetchAll(category!);
+    fetchCategory(category)
+      .then(data => {
         if (!cancelled) {
           setArticles(data);
-          setCache(cacheKey(category!), data);
           setLoading(false);
         }
-      } catch {
+      })
+      .catch(() => {
         if (!cancelled) {
           setError('Falha ao carregar artigos. Tente novamente.');
           setLoading(false);
         }
-      }
-    }
+      });
 
-    load();
     return () => { cancelled = true; };
-  }, [category, fetchAll]);
+  }, [category, fetchCategory]);
 
   const filtered = filterBySearch(articles, searchQuery);
 
@@ -117,16 +97,17 @@ export function useArticles(category: Category | null, searchQuery: string) {
     if (!category) return;
     setLoading(true);
     setError(null);
+    // Force re-fetch by clearing cache
+    feedsCache = null;
     try {
-      const data = await fetchAll(category);
+      const data = await fetchCategory(category);
       setArticles(data);
-      setCache(cacheKey(category), data);
     } catch {
       setError('Falha ao carregar artigos. Tente novamente.');
     } finally {
       setLoading(false);
     }
-  }, [category, fetchAll]);
+  }, [category, fetchCategory]);
 
-  return { articles: filtered, loading, error, refresh, isCached: category ? isCacheFresh(cacheKey(category)) : false };
+  return { articles: filtered, loading, error, refresh, generatedAt };
 }
