@@ -9,49 +9,68 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// Max articles PER feed source — keeps results diverse
+const MAX_PER_FEED = 5;
+const MAX_HN_PER_TERM = 8;
+
 // ========== CONFIG ==========
 
 const CATEGORIES = ['filosofia', 'entretenimento', 'tecnologia', 'ciencia'];
 
 const HN_SEARCH_TERMS = {
-  filosofia: ['philosophy', 'ethics', 'stoicism'],
-  entretenimento: ['film essay', 'book review', 'culture'],
-  tecnologia: ['programming', 'software engineering', 'AI'],
-  ciencia: ['science', 'physics', 'neuroscience'],
+  filosofia: ['philosophy', 'ethics', 'stoicism', 'existentialism'],
+  entretenimento: ['film essay', 'book review', 'culture', 'music essay'],
+  tecnologia: ['programming', 'software engineering', 'AI', 'open source'],
+  ciencia: ['science', 'physics', 'neuroscience', 'biology'],
 };
 
 const RSS_SOURCES = [
+  // ===== FILOSOFIA (10 feeds) =====
   { name: 'Aeon', url: 'https://aeon.co/feed.rss', category: 'filosofia' },
   { name: 'The Marginalian', url: 'https://www.themarginalian.org/feed/', category: 'filosofia' },
   { name: 'Daily Nous', url: 'https://dailynous.com/feed/', category: 'filosofia' },
   { name: 'Stanford Encyclopedia', url: 'https://plato.stanford.edu/rss/sep.xml', category: 'filosofia' },
   { name: 'r/philosophy', url: 'https://www.reddit.com/r/philosophy/top/.rss?t=week', category: 'filosofia' },
+  { name: 'Psyche', url: 'https://psyche.co/feed', category: 'filosofia' },
+  { name: 'r/existentialism', url: 'https://www.reddit.com/r/Existentialism/top/.rss?t=week', category: 'filosofia' },
+  { name: 'r/askphilosophy', url: 'https://www.reddit.com/r/askphilosophy/top/.rss?t=week', category: 'filosofia' },
+  { name: 'r/stoicism', url: 'https://www.reddit.com/r/Stoicism/top/.rss?t=week', category: 'filosofia' },
+  { name: 'Blog of the APA', url: 'https://blog.apaonline.org/feed/', category: 'filosofia' },
 
+  // ===== ENTRETENIMENTO (8 feeds) =====
   { name: 'Longreads', url: 'https://longreads.com/feed/', category: 'entretenimento' },
   { name: 'The Guardian - Culture', url: 'https://www.theguardian.com/culture/rss', category: 'entretenimento' },
   { name: 'Open Culture', url: 'https://www.openculture.com/feed', category: 'entretenimento' },
   { name: 'The New Yorker', url: 'https://www.newyorker.com/feed/culture', category: 'entretenimento' },
   { name: 'r/TrueFilm', url: 'https://www.reddit.com/r/TrueFilm/top/.rss?t=week', category: 'entretenimento' },
+  { name: 'r/books', url: 'https://www.reddit.com/r/books/top/.rss?t=week', category: 'entretenimento' },
+  { name: 'The Guardian - Books', url: 'https://www.theguardian.com/books/rss', category: 'entretenimento' },
+  { name: 'Literary Hub', url: 'https://lithub.com/feed/', category: 'entretenimento' },
 
+  // ===== TECNOLOGIA (8 feeds) =====
   { name: 'Ars Technica', url: 'https://feeds.arstechnica.com/arstechnica/index', category: 'tecnologia' },
   { name: 'Wired', url: 'https://www.wired.com/feed/rss', category: 'tecnologia' },
   { name: 'MIT Tech Review', url: 'https://www.technologyreview.com/feed/', category: 'tecnologia' },
   { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml', category: 'tecnologia' },
   { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', category: 'tecnologia' },
   { name: 'r/programming', url: 'https://www.reddit.com/r/programming/top/.rss?t=week', category: 'tecnologia' },
+  { name: 'The Register', url: 'https://www.theregister.com/headlines.atom', category: 'tecnologia' },
+  { name: 'IEEE Spectrum', url: 'https://spectrum.ieee.org/feeds/feed.rss', category: 'tecnologia' },
 
+  // ===== CIÊNCIA (8 feeds) =====
   { name: 'Quanta Magazine', url: 'https://api.quantamagazine.org/feed/', category: 'ciencia' },
   { name: 'Nature', url: 'https://www.nature.com/nature.rss', category: 'ciencia' },
   { name: 'Science Daily', url: 'https://www.sciencedaily.com/rss/all.xml', category: 'ciencia' },
   { name: 'Phys.org', url: 'https://phys.org/rss-feed/', category: 'ciencia' },
   { name: 'New Scientist', url: 'https://www.newscientist.com/feed/home/', category: 'ciencia' },
   { name: 'r/science', url: 'https://www.reddit.com/r/science/top/.rss?t=week', category: 'ciencia' },
+  { name: 'The Conversation - Science', url: 'https://theconversation.com/us/technology/articles.atom', category: 'ciencia' },
+  { name: 'Live Science', url: 'https://www.livescience.com/feeds/all', category: 'ciencia' },
 ];
 
 // ========== XML PARSING (simple regex-based, no DOM in Node) ==========
 
 function extractTag(xml, tagName) {
-  // Handle both <tag>content</tag> and <tag><![CDATA[content]]></tag>
   const regex = new RegExp(`<${tagName}[^>]*>(?:<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>|([\\s\\S]*?))</${tagName}>`, 'i');
   const match = xml.match(regex);
   if (match) return (match[1] || match[2] || '').trim();
@@ -69,17 +88,15 @@ function stripHtml(html) {
     .replace(/<[^>]*>/g, '')
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#039;/g, "'")
-    .replace(/&#8217;/g, "\u2019").replace(/&#8216;/g, "\u2018")
-    .replace(/&#8220;/g, "\u201C").replace(/&#8221;/g, "\u201D")
-    .replace(/&#8211;/g, "\u2013").replace(/&#8212;/g, "\u2014")
+    .replace(/&#8217;/g, '\u2019').replace(/&#8216;/g, '\u2018')
+    .replace(/&#8220;/g, '\u201C').replace(/&#8221;/g, '\u201D')
+    .replace(/&#8211;/g, '\u2013').replace(/&#8212;/g, '\u2014')
     .replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, '')
     .trim();
 }
 
 function parseRssXml(xml) {
   const items = [];
-
-  // Split by <item> or <entry>
   const itemRegex = /<(?:item|entry)[\s>]([\s\S]*?)<\/(?:item|entry)>/gi;
   let match;
 
@@ -151,7 +168,6 @@ async function fetchOneFeed(source) {
       console.log(`  [SKIP] ${source.name}: empty response`);
       return [];
     }
-    // Validate it's XML-ish, not HTML error page
     if (xml.includes('<!DOCTYPE html') || (xml.startsWith('<html') && !xml.includes('<rss') && !xml.includes('<feed'))) {
       console.log(`  [SKIP] ${source.name}: got HTML instead of RSS`);
       return [];
@@ -162,7 +178,7 @@ async function fetchOneFeed(source) {
 
     const isReddit = source.name.startsWith('r/');
 
-    return items.slice(0, 10).map((item, idx) => {
+    return items.slice(0, MAX_PER_FEED).map((item, idx) => {
       const desc = stripHtml(item.description).slice(0, 250);
       let url = item.link;
       if (isReddit) {
@@ -198,7 +214,7 @@ async function fetchHackerNews(category) {
       const params = new URLSearchParams({
         query: term,
         tags: 'story',
-        hitsPerPage: '15',
+        hitsPerPage: String(MAX_HN_PER_TERM),
         numericFilters: 'points>10',
       });
       const res = await fetch(`https://hn.algolia.com/api/v1/search_by_date?${params}`);
@@ -250,7 +266,6 @@ async function fetchHackerNews(category) {
 function normalizeScores(articles) {
   if (articles.length === 0) return [];
 
-  // Normalize HN and RSS scores separately so neither dominates
   const hn = articles.filter(a => a.source === 'Hacker News');
   const rss = articles.filter(a => a.source !== 'Hacker News');
 
@@ -293,9 +308,8 @@ async function main() {
   const result = {};
 
   for (const category of CATEGORIES) {
-    console.log(`\n📂 Category: ${category}`);
+    console.log(`\n\u{1F4C2} Category: ${category}`);
 
-    // Fetch RSS feeds for this category
     const sources = RSS_SOURCES.filter(s => s.category === category);
     console.log(`  Fetching ${sources.length} RSS feeds...`);
 
@@ -303,36 +317,27 @@ async function main() {
     const rssArticles = rssResults.flat();
     console.log(`  RSS total: ${rssArticles.length} articles`);
 
-    // Fetch HackerNews
     console.log(`  Fetching HackerNews...`);
     const hnArticles = await fetchHackerNews(category);
     console.log(`  HN total: ${hnArticles.length} articles`);
 
-    // Combine, filter, deduplicate, normalize, sort
     const all = [...hnArticles, ...rssArticles];
     const valid = filterValid(all);
     const deduped = deduplicateArticles(valid);
     const normalized = normalizeScores(deduped);
-    // Sort by recency first, then score as tiebreak
-    // Articles from the same day are sorted by score
     const sorted = normalized.sort((a, b) => {
       const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
       const dateB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
-
-      // Group by "day" — articles from different days: newer first
       const dayA = Math.floor(dateA / 86400000);
       const dayB = Math.floor(dateB / 86400000);
       if (dayA !== dayB) return dayB - dayA;
-
-      // Same day: higher score first
       return b.score - a.score;
     });
 
     result[category] = sorted;
-    console.log(`  ✅ Final: ${sorted.length} articles`);
+    console.log(`  \u2705 Final: ${sorted.length} articles`);
   }
 
-  // Write output
   const outDir = join(__dirname, '..', 'public', 'data');
   mkdirSync(outDir, { recursive: true });
 
@@ -343,9 +348,8 @@ async function main() {
 
   const outPath = join(outDir, 'feeds.json');
   writeFileSync(outPath, JSON.stringify(output));
-  console.log(`\n✅ Written to ${outPath}`);
+  console.log(`\n\u2705 Written to ${outPath}`);
 
-  // Summary
   for (const cat of CATEGORIES) {
     const sources = new Set(result[cat].map(a => a.source));
     console.log(`  ${cat}: ${result[cat].length} articles from [${[...sources].join(', ')}]`);

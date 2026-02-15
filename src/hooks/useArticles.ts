@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Article, Category } from '../types/article';
-import { filterBySearch } from '../utils/articleNormalizer';
 
 // Base path for GitHub Pages
 const BASE = import.meta.env.BASE_URL || '/trending-reads/';
+const HN_API = 'https://hn.algolia.com/api/v1/search';
 
 interface FeedsData {
   generatedAt: string;
@@ -15,20 +15,15 @@ let feedsCache: FeedsData | null = null;
 let feedsFetchPromise: Promise<FeedsData | null> | null = null;
 
 async function loadFeeds(): Promise<FeedsData | null> {
-  // Return cached data if available
   if (feedsCache) return feedsCache;
-
-  // Deduplicate in-flight requests
   if (feedsFetchPromise) return feedsFetchPromise;
 
   feedsFetchPromise = (async () => {
     try {
       const url = `${BASE}data/feeds.json`;
-      console.log(`[useArticles] Fetching feeds from: ${url}`);
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: FeedsData = await res.json();
-      console.log(`[useArticles] Feeds loaded, generated at: ${data.generatedAt}`);
       feedsCache = data;
       return data;
     } catch (e) {
@@ -42,26 +37,55 @@ async function loadFeeds(): Promise<FeedsData | null> {
   return feedsFetchPromise;
 }
 
+// ========== LIVE SEARCH via HN Algolia ==========
+
+async function searchHN(query: string): Promise<Article[]> {
+  try {
+    const params = new URLSearchParams({
+      query,
+      tags: 'story',
+      hitsPerPage: '30',
+      numericFilters: 'points>5',
+    });
+    const res = await fetch(`${HN_API}?${params}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+
+    return (data.hits || [])
+      .filter((h: Record<string, unknown>) => h.title && (h.url || h.objectID))
+      .map((h: Record<string, unknown>) => ({
+        id: `hn-search-${h.objectID}`,
+        title: h.title as string,
+        url: (h.url as string) || `https://news.ycombinator.com/item?id=${h.objectID}`,
+        source: 'Hacker News',
+        category: 'tecnologia' as Category,
+        score: ((h.points as number) || 0) + ((h.num_comments as number) || 0),
+        description: '',
+        publishedAt: h.created_at as string,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+// ========== HOOK ==========
+
 export function useArticles(category: Category | null, searchQuery: string) {
   const [articles, setArticles] = useState<Article[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
+  const searchAbortRef = useRef(0);
 
-  const fetchCategory = useCallback(async (cat: Category) => {
+  // Load articles from static feeds.json for the selected category
+  const loadCategory = useCallback(async (cat: Category) => {
     const feeds = await loadFeeds();
     if (!feeds) throw new Error('Dados indisponíveis');
-
-    const categoryArticles = feeds.categories[cat] || [];
     setGeneratedAt(feeds.generatedAt);
-
-    console.log(`[useArticles] ${cat}: ${categoryArticles.length} articles`);
-    const sources = new Set(categoryArticles.map(a => a.source));
-    console.log(`[useArticles] Sources: ${[...sources].join(', ')}`);
-
-    return categoryArticles;
+    return feeds.categories[cat] || [];
   }, []);
 
+  // Effect: load category data when category changes
   useEffect(() => {
     if (!category) {
       setArticles([]);
@@ -74,7 +98,7 @@ export function useArticles(category: Category | null, searchQuery: string) {
     setLoading(true);
     setError(null);
 
-    fetchCategory(category)
+    loadCategory(category)
       .then(data => {
         if (!cancelled) {
           setArticles(data);
@@ -89,25 +113,75 @@ export function useArticles(category: Category | null, searchQuery: string) {
       });
 
     return () => { cancelled = true; };
-  }, [category, fetchCategory]);
+  }, [category, loadCategory]);
 
-  const filtered = filterBySearch(articles, searchQuery);
+  // Effect: live search when searchQuery changes
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query || !category) return;
 
+    // First filter from loaded articles
+    const lower = query.toLowerCase();
+    const localMatches = articles.filter(
+      a => a.title.toLowerCase().includes(lower) ||
+           a.source.toLowerCase().includes(lower) ||
+           (a.description && a.description.toLowerCase().includes(lower))
+    );
+
+    // If we have enough local matches, don't hit the API
+    if (localMatches.length >= 10) return;
+
+    // Otherwise, also search HN Algolia for the query
+    const searchId = ++searchAbortRef.current;
+
+    const timer = setTimeout(async () => {
+      try {
+        const hnResults = await searchHN(query);
+        if (searchAbortRef.current !== searchId) return; // stale
+
+        // Merge HN results with local results, deduplicate
+        const seen = new Set(localMatches.map(a => a.url));
+        const newResults = hnResults.filter(a => !seen.has(a.url));
+        if (newResults.length > 0) {
+          setArticles(prev => {
+            // Keep all original articles but append search results at the end
+            const prevUrls = new Set(prev.map(a => a.url));
+            const toAdd = newResults.filter(a => !prevUrls.has(a.url));
+            return [...prev, ...toAdd];
+          });
+        }
+      } catch { /* ignore */ }
+    }, 500);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, category]);
+
+  // Filter displayed articles by search query
+  const filtered = searchQuery.trim()
+    ? articles.filter(a => {
+        const lower = searchQuery.toLowerCase();
+        return a.title.toLowerCase().includes(lower) ||
+               a.source.toLowerCase().includes(lower) ||
+               (a.description && a.description.toLowerCase().includes(lower));
+      })
+    : articles;
+
+  // Refresh: force re-fetch feeds.json from server
   const refresh = useCallback(async () => {
     if (!category) return;
     setLoading(true);
     setError(null);
-    // Force re-fetch by clearing cache
     feedsCache = null;
     try {
-      const data = await fetchCategory(category);
+      const data = await loadCategory(category);
       setArticles(data);
     } catch {
       setError('Falha ao carregar artigos. Tente novamente.');
     } finally {
       setLoading(false);
     }
-  }, [category, fetchCategory]);
+  }, [category, loadCategory]);
 
   return { articles: filtered, loading, error, refresh, generatedAt };
 }
