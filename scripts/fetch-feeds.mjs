@@ -65,7 +65,15 @@ function extractAttr(xml, tagName, attrName) {
 }
 
 function stripHtml(html) {
-  return html.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').trim();
+  return html
+    .replace(/<[^>]*>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#039;/g, "'")
+    .replace(/&#8217;/g, "\u2019").replace(/&#8216;/g, "\u2018")
+    .replace(/&#8220;/g, "\u201C").replace(/&#8221;/g, "\u201D")
+    .replace(/&#8211;/g, "\u2013").replace(/&#8212;/g, "\u2014")
+    .replace(/&nbsp;/g, ' ').replace(/&#\d+;/g, '')
+    .trim();
 }
 
 function parseRssXml(xml) {
@@ -241,12 +249,22 @@ async function fetchHackerNews(category) {
 
 function normalizeScores(articles) {
   if (articles.length === 0) return [];
-  const maxScore = Math.max(...articles.map(a => a.score));
-  if (maxScore === 0) return articles.map(a => ({ ...a, score: 50 }));
-  return articles.map(a => ({
-    ...a,
-    score: Math.round((a.score / maxScore) * 100),
-  }));
+
+  // Normalize HN and RSS scores separately so neither dominates
+  const hn = articles.filter(a => a.source === 'Hacker News');
+  const rss = articles.filter(a => a.source !== 'Hacker News');
+
+  function normalizeGroup(group) {
+    if (group.length === 0) return [];
+    const maxScore = Math.max(...group.map(a => a.score));
+    if (maxScore === 0) return group.map(a => ({ ...a, score: 50 }));
+    return group.map(a => ({
+      ...a,
+      score: Math.round((a.score / maxScore) * 100),
+    }));
+  }
+
+  return [...normalizeGroup(hn), ...normalizeGroup(rss)];
 }
 
 function deduplicateArticles(articles) {
@@ -295,12 +313,19 @@ async function main() {
     const valid = filterValid(all);
     const deduped = deduplicateArticles(valid);
     const normalized = normalizeScores(deduped);
+    // Sort by recency first, then score as tiebreak
+    // Articles from the same day are sorted by score
     const sorted = normalized.sort((a, b) => {
-      const scoreDiff = b.score - a.score;
-      if (scoreDiff !== 0) return scoreDiff;
       const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
       const dateB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
-      return dateB - dateA;
+
+      // Group by "day" — articles from different days: newer first
+      const dayA = Math.floor(dateA / 86400000);
+      const dayB = Math.floor(dateB / 86400000);
+      if (dayA !== dayB) return dayB - dayA;
+
+      // Same day: higher score first
+      return b.score - a.score;
     });
 
     result[category] = sorted;
